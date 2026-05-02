@@ -1,122 +1,120 @@
 /** 
- * SKU 代码链接处理脚本 (Odoo 19 适配版)
+ * SKU 代码链接处理脚本 (Odoo 19 Web Components 版)
  * 功能：为列表视图中的料号链接添加点击事件，触发查看图纸操作
  */
+
 (function() {
     'use strict';
 
-    // 检查 Odoo 框架是否加载
-    function waitForOdoo(callback) {
-        if (window.odoo && window.odoo.web) {
-            callback();
-        } else {
-            setTimeout(function() {
-                waitForOdoo(callback);
-            }, 100);
-        }
-    }
-
-    waitForOdoo(function() {
-        // 初始化链接事件
-        initSkuCodeLinks();
+    // 定义模块
+    odoo.define('material_tracker.sku_link_handler', function(require) {
+        var core = require('web.core');
+        var Widget = require('web.Widget');
+        var rpc = require('web.rpc');
+        var ActionManager = require('web.ActionManager');
         
-        // 监听动态内容更新
-        var observer = new MutationObserver(function(mutations) {
-            initSkuCodeLinks();
-        });
-        
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            characterData: false
-        });
-    });
-
-    /**
-     * 初始化料号链接的点击事件处理
-     */
-    function initSkuCodeLinks() {
-        var links = document.querySelectorAll('a.o_form_uri[data-oid]');
-        
-        if (links.length === 0) {
-            return;
-        }
-        
-        links.forEach(function(link) {
-            // 检查是否已绑定事件
-            if (link.hasOwnProperty('_sku_handler_bound')) {
-                return;
-            }
+        // 监听 DOM 变化并初始化链接
+        function initializeSkuLinks() {
+            var links = document.querySelectorAll('a.o_form_uri[data-oid]');
             
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
+            links.forEach(function(link) {
+                // 检查是否已绑定事件
+                if (link.dataset.skuHandlerBound) {
+                    return;
+                }
                 
-                var itemId = parseInt(this.getAttribute('data-oid'), 10);
-                if (itemId) {
-                    triggerViewPdf(itemId);
+                link.style.cursor = 'pointer';
+                link.style.color = '#017e84';
+                link.style.fontWeight = '500';
+                link.style.textDecoration = 'underline';
+                
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    var itemId = parseInt(this.getAttribute('data-oid'), 10);
+                    if (itemId) {
+                        viewPdfAction(itemId);
+                    }
+                    return false;
+                });
+                
+                link.dataset.skuHandlerBound = true;
+            });
+        }
+
+        /**
+         * 执行查看图纸的 action
+         */
+        function viewPdfAction(itemId) {
+            rpc.query({
+                model: 'material.tracker.item',
+                method: 'action_view_pdf',
+                args: [[itemId]]
+            }).then(function(action) {
+                if (action) {
+                    return new ActionManager().do_action(action);
+                }
+            }).catch(function(error) {
+                var message = '查看图纸失败';
+                if (error.data && error.data.message) {
+                    message = error.data.message;
+                } else if (error.message) {
+                    message = error.message;
+                }
+                
+                // 使用 Odoo 核心通知
+                require('web.Dialog').alert(null, message);
+                console.error('action_view_pdf error:', error);
+            });
+        }
+
+        // 页面加载时初始化
+        $(document).ready(function() {
+            initializeSkuLinks();
+        });
+
+        // 监听 AJAX 加载完成事件
+        $(document).on('oe_list_content_reload', function() {
+            setTimeout(initializeSkuLinks, 100);
+        });
+
+        // 使用 MutationObserver 监听 DOM 变化
+        if (window.MutationObserver) {
+            var observer = new MutationObserver(function(mutations) {
+                var shouldReinit = false;
+                
+                for (var i = 0; i < mutations.length; i++) {
+                    if (mutations[i].addedNodes.length > 0) {
+                        shouldReinit = true;
+                        break;
+                    }
+                }
+                
+                if (shouldReinit) {
+                    setTimeout(initializeSkuLinks, 50);
                 }
             });
-            
-            link._sku_handler_bound = true;
-        });
-    }
 
-    /**
-     * 触发查看图纸操作
-     * @param {number} itemId - 料号 ID
-     */
-    function triggerViewPdf(itemId) {
-        // 获取 Odoo 的 RPC 方法
-        var rpc = window.odoo.web.rpc;
-        
-        if (!rpc) {
-            console.error('RPC not available');
-            return;
+            var config = {
+                childList: true,
+                subtree: true,
+                characterData: false,
+                attributes: false
+            };
+
+            var targetNode = document.querySelector('.o_content');
+            if (targetNode) {
+                observer.observe(targetNode, config);
+            } else {
+                observer.observe(document.body, config);
+            }
         }
 
-        // 通过 RPC 调用 action_view_pdf 方法
-        rpc.query({
-            model: 'material.tracker.item',
-            method: 'action_view_pdf',
-            args: [[itemId]]
-        }).then(function(action) {
-            if (action) {
-                // 通过 do_action 执行返回的 action
-                var ActionManager = window.odoo.web.ActionManager;
-                if (ActionManager && ActionManager.prototype.do_action) {
-                    // Odoo 19 方式
-                    var env = window.odoo.env;
-                    if (env && env.services && env.services.action) {
-                        env.services.action.doAction(action);
-                    }
-                } else {
-                    console.warn('Cannot execute action - ActionManager not found');
-                }
-            }
-        }).catch(function(error) {
-            console.error('Failed to call action_view_pdf:', error);
-            
-            // 显示用户友好的错误提示
-            var message = '查看图纸失败';
-            if (error.data && error.data.message) {
-                message = error.data.message;
-            } else if (error.message) {
-                message = error.message;
-            }
-            
-            // 使用 Odoo 的通知系统显示错误
-            var Notification = window.odoo.Notification;
-            if (Notification) {
-                Notification.notify({
-                    title: '错误',
-                    message: message,
-                    type: 'danger',
-                    sticky: false
-                });
-            } else {
-                alert(message);
-            }
-        });
-    }
+        return {
+            initializeSkuLinks: initializeSkuLinks,
+            viewPdfAction: viewPdfAction
+        };
+    });
+
 })();
