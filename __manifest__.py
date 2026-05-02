@@ -24,9 +24,10 @@
   'assets': {
         'web.assets_backend': [
             'material_tracker/static/src/css/pdf_preview.css',
+            'material_tracker/static/src/js/sku_code_link_handler.js',
         ],
     },
-        
+         
     'installable': True,
     'application': True,
     'license': 'LGPL-3',
