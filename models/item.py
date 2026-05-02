@@ -33,7 +33,11 @@ class MaterialTrackerItem(models.Model):
     @api.depends('sku_code')
     def _compute_sku_code_link(self):
         for rec in self:
-            rec.sku_code_link = f'<span>{rec.sku_code}</span>'
+            if rec.sku_code:
+                # 生成可点击的料号链接，点击时触发 action_view_pdf
+                rec.sku_code_link = f'<a href="#" class="o_form_uri o_field_uri" data-oid="{rec.id}" onclick="return false;" style="cursor: pointer; color: #017e84; font-weight: 500;">{rec.sku_code}</a>'
+            else:
+                rec.sku_code_link = '<span></span>'
 
     def action_view_pdf(self):
         """对接图纸管理系统：自动检索、切片并以全屏沉浸模式展示图纸"""
@@ -48,7 +52,7 @@ class MaterialTrackerItem(models.Model):
         ], limit=1)
 
         if not hit_index:
-            raise exceptions.UserError(f'未在任何图纸中检索到料号: {self.sku_code}。\n请前往“图纸管理”确认图纸已上传并成功建立索引。')
+            raise exceptions.UserError(f'未在任何图纸中检索到料号: {self.sku_code}。\n请前往"图纸管理"确认图纸已上传并成功建立索引。')
 
         # 2. 获取对应的图纸主记录
         drawing = hit_index.drawing_id
@@ -77,7 +81,7 @@ class MaterialTrackerItem(models.Model):
             },
             'flags': {
                 'mode': 'readonly',
-                'action_buttons': False, # 彻底隐藏顶部的“保存/编辑/丢弃”按钮
+                'action_buttons': False, # 彻底隐藏顶部的"保存/编辑/丢弃"按钮
                 'headless': True,        # 告知系统尽可能隐藏弹窗标题栏
             },
         }
